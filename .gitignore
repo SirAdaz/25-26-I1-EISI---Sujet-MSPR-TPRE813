@@ -1,0 +1,38 @@
+# Données lourdes : à récupérer sur Google Drive (pas sur GitHub)
+bronze/
+silver/
+gold/
+
+# Fichiers générés automatiquement (entraînement)
+models/*.joblib
+models/*.joblib.meta.json
+models/*.png
+models/summary_all_candidates.json
+models/summary_all_candidates.png
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+.env
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# IDE / éditeur
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
