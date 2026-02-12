@@ -68,28 +68,7 @@ python scripts/train_predict_election.py --target MACRON --top-features 25
 
 # Tous les candidats + synthese
 python scripts/train_predict_election.py --all
-
-# Validation temporelle : entrainement 2017, evaluation sur vue 2022
-python scripts/train_predict_election.py --target MACRON --holdout gold/gold_ml_view_2022.csv
 ```
-
-### Validation temporelle (train 2017, test 2022)
-
-Pour mesurer la stabilite du modele dans le temps :
-
-1. Generer la vue Gold 2022 sans ecraser la vue 2017 (apres avoir prepare le Silver 2022, ex. `elections_2022.csv`, etc.) :
-
-   ```bash
-   python scripts/silver_to_gold.py --year 2022 --output-view gold_ml_view_2022.csv
-   ```
-
-2. Entrainer sur 2017 et evaluer sur 2022 :
-
-   ```bash
-   python scripts/train_predict_election.py --target MACRON --holdout gold/gold_ml_view_2022.csv
-   ```
-
-La vue holdout doit avoir la meme structure que `gold_ml_view.csv` (memes colonnes features + `voix_<CANDIDAT>` pour la cible).
 
 ## Fichiers IVX/IVD (Beyond 20/20)
 

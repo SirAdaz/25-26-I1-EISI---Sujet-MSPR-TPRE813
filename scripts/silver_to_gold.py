@@ -20,18 +20,22 @@ def ensure_gold_dir():
     config.GOLD_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def _load_extra_elections(communes_10k_set):
+def _load_extra_elections(communes_10k_set, exclude_years=None):
     """
-    Charge les elections supplementaires (2012 pres/leg, 2022 leg) et retourne
-    un DataFrame par fichier avec code_geo et colonnes part_voix_<CANDIDAT>_<year>_<type>.
-    Limite : top 15 candidats par election (par total voix) pour eviter trop de colonnes.
+    Charge les elections supplementaires (2012 pres/leg uniquement par defaut).
+    Retourne un DataFrame par fichier avec code_geo et colonnes part_voix_<CANDIDAT>_<year>_<type>.
+    exclude_years : annees a ne pas charger (defaut : [2022], trop de NaN par commune).
+    Limite : top 15 candidats par election (par total voix).
     """
     extra = getattr(config, "BRONZE_ELECTIONS_EXTRA", [])
     if not extra:
         return []
+    exclude_years = exclude_years if exclude_years is not None else [2022]
     results = []
     for entry in extra:
         year, typ = entry.get("year"), entry.get("type")
+        if year in exclude_years:
+            continue
         path = config.SILVER_DIR / f"elections_{year}_{typ}.csv"
         if not path.exists():
             continue
@@ -303,7 +307,7 @@ def _build_resultat_rows(elec, voix_cols, nom_to_id_candidat):
 
 
 def _merge_extra_parts_into_vue(vue_ml, extra_elections_parts):
-    """Fusionne les DataFrames part_voix (2012 pres/leg, 2022 leg) dans vue_ml sur code_geo."""
+    """Fusionne les DataFrames part_voix (2012 pres/leg) dans vue_ml sur code_geo. 2022 exclu (trop de NaN)."""
     if not extra_elections_parts:
         return vue_ml
     for part_df in extra_elections_parts:
@@ -349,6 +353,12 @@ def _write_resultat_and_vue_ml(elec, geo_df, stat_per_geo, voix_cols, nom_to_id_
     )
     vue_ml = _apply_circo_and_pop(vue_ml, circo, population_dep)
     vue_ml = vue_ml.merge(elec[["Id_geo"] + voix_cols], on="Id_geo", how="left")
+    # Parts des voix 2017 en % (comme 2012), puis on retire les voix_* pour eviter confusion et fuite
+    exprimes = vue_ml[voix_cols].sum(axis=1).replace(0, np.nan)
+    for col in voix_cols:
+        cand = col.replace("voix_", "")
+        vue_ml[f"part_voix_2017_{cand}"] = (vue_ml[col] / exprimes).round(6)
+    vue_ml = vue_ml.drop(columns=voix_cols, errors="ignore")
     vue_ml = _merge_extra_parts_into_vue(vue_ml, extra_elections_parts or [])
     view_name = output_view_basename if output_view_basename else "gold_ml_view.csv"
     vue_ml.to_csv(config.GOLD_DIR / view_name, index=False, sep=";", encoding="utf-8")

@@ -87,27 +87,34 @@ def add_derived_features(df):
 def prepare_xy(df, target_candidate="MACRON", feature_cols=None):
     """
     Prepare les matrices X (features) et y (cible).
-    target_candidate : nom du candidat (suffixe de la colonne voix_XXX) pour la cible.
-    Cible = part des voix de ce candidat (voix_XXX / total exprimes).
+    Cible = part des voix du candidat (pourcentage). Utilise part_voix_2017_<CANDIDAT> si presente,
+    sinon voix_<CANDIDAT> / total exprimés (vue ancienne).
     """
-    voix_cols = [c for c in df.columns if c.startswith("voix_")]
-    if not voix_cols:
-        raise ValueError("Aucune colonne voix_* dans la vue Gold.")
     df = df.copy()
-    df["_exprimes"] = df[voix_cols].sum(axis=1)
-    target_col = f"voix_{target_candidate}"
-    if target_col not in df.columns:
-        raise ValueError(f"Colonne {target_col} absente. Candidats disponibles: {[c.replace('voix_','') for c in voix_cols]}")
-    df["_target"] = df[target_col] / df["_exprimes"].replace(0, np.nan)
+    target_part_col = f"part_voix_2017_{target_candidate}"
+    if target_part_col in df.columns:
+        df["_target"] = pd.to_numeric(df[target_part_col], errors="coerce")
+    else:
+        voix_cols = [c for c in df.columns if c.startswith("voix_")]
+        if not voix_cols:
+            raise ValueError("Aucune colonne part_voix_2017_* ni voix_* dans la vue Gold.")
+        target_col = f"voix_{target_candidate}"
+        if target_col not in df.columns:
+            raise ValueError(f"Colonne {target_col} absente. Candidats: {[c.replace('voix_','') for c in voix_cols]}")
+        df["_exprimes"] = df[voix_cols].sum(axis=1).replace(0, np.nan)
+        df["_target"] = df[target_col] / df["_exprimes"]
     df = df.dropna(subset=["_target"])
 
-    # Si pas de liste fournie : indicateurs de base + part_voix (elections passées)
+    # Si pas de liste fournie : indicateurs de base + part_voix (elections passées, pas année courante = fuite)
     if feature_cols is None:
         feature_cols = [c for c in [
             "tauxChomage", "tauxSec", "TauxMariage", "TauxDec", "tauxNatalite",
             "pop_dep", "circo", "REG"
         ] if c in df.columns]
-        part_voix_cols = [c for c in df.columns if c.startswith("part_voix_")]
+        part_voix_cols = [
+            c for c in df.columns
+            if c.startswith("part_voix_") and not c.startswith(f"part_voix_{config.ELECTION_YEAR}_")
+        ]
         feature_cols = feature_cols + part_voix_cols
     for c in feature_cols:
         df[c] = pd.to_numeric(df[c], errors="coerce")
@@ -325,10 +332,14 @@ def run(train=True, target_candidate="MACRON", test_size=0.2, model_name="gb", d
         "med_niveau_vie", "taux_pauvrette", "part_sans_diplome", "part_bac_plus", "pop_commune",
     ] if c in df.columns]
     feature_cols = feature_cols + derived
-    part_voix_cols = [c for c in df.columns if c.startswith("part_voix_")]
+    # Part des voix des elections PASSÉES uniquement (pas 2017 : ce serait de la fuite de donnees / triche)
+    part_voix_cols = [
+        c for c in df.columns
+        if c.startswith("part_voix_") and not c.startswith(f"part_voix_{config.ELECTION_YEAR}_")
+    ]
     feature_cols = feature_cols + part_voix_cols
     X, y, _ = prepare_xy(df, target_candidate=target_candidate, feature_cols=feature_cols)
-    print(f"Echantillons: {len(X)}, features: {len(feature_cols)} (dont {len(part_voix_cols)} part_voix, {len(derived)} derivees), cible: voix_{target_candidate}")
+    print(f"Echantillons: {len(X)}, features: {len(feature_cols)} (dont {len(part_voix_cols)} part_voix passées, {len(derived)} dérivées), cible: part_voix_2017_{target_candidate}")
 
     # Optionnel : garder seulement les N variables les plus importantes (1er fit -> importances -> refit)
     if top_features and top_features > 0 and len(feature_cols) > top_features:
@@ -384,7 +395,7 @@ def _do_train_and_save(X, y, feature_cols, target_candidate, test_size, model_na
 def evaluate_holdout(model, feature_cols, holdout_path, target_candidate):
     """
     Validation temporelle : évalue le modèle sur une vue Gold d'une autre année (ex. 2022).
-    holdout_path : chemin vers un CSV même format que gold_ml_view (mêmes colonnes features + voix_*).
+    holdout_path : chemin vers un CSV même format que gold_ml_view (features + part_voix_2017_* pour la cible).
     """
     path = Path(holdout_path)
     if not path.is_absolute():
@@ -398,9 +409,9 @@ def evaluate_holdout(model, feature_cols, holdout_path, target_candidate):
     if missing:
         print(f"  Holdout ignoré : colonnes manquantes dans la vue {path.name}: {missing[:10]}{'...' if len(missing) > 10 else ''}")
         return
-    target_col = f"voix_{target_candidate}"
-    if target_col not in df.columns:
-        print(f"  Holdout ignoré : colonne cible {target_col} absente dans {path.name}")
+    target_col = f"part_voix_2017_{target_candidate}"
+    if target_col not in df.columns and f"voix_{target_candidate}" not in df.columns:
+        print(f"  Holdout ignoré : colonne cible {target_col} (ou voix_{target_candidate}) absente dans {path.name}")
         return
     x_holdout, y_holdout, _ = prepare_xy(df, target_candidate=target_candidate, feature_cols=feature_cols)
     if len(x_holdout) == 0:
@@ -417,8 +428,11 @@ def evaluate_holdout(model, feature_cols, holdout_path, target_candidate):
 # -----------------------------------------------------------------------------
 
 def get_all_candidates():
-    """Retourne la liste des noms de candidats (suffixes des colonnes voix_*) dans la vue Gold."""
+    """Retourne la liste des noms de candidats (part_voix_2017_* ou voix_*) dans la vue Gold."""
     df = load_gold_view()
+    part_cols = [c for c in df.columns if c.startswith(f"part_voix_{config.ELECTION_YEAR}_")]
+    if part_cols:
+        return sorted([c.replace(f"part_voix_{config.ELECTION_YEAR}_", "") for c in part_cols])
     voix_cols = [c for c in df.columns if c.startswith("voix_")]
     return sorted([c.replace("voix_", "") for c in voix_cols])
 
