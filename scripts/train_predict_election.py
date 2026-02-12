@@ -460,6 +460,13 @@ def write_summary_all_candidates():
     if not summary["candidates"]:
         print("  (Aucun fichier .meta.json trouve, pas de synthese generee)")
         return
+    # Moyenne sur tous les candidats (MAE, RMSE, R2, accuracy_*)
+    metrics_keys = ["MAE", "RMSE", "R2", "accuracy_within_1pt", "accuracy_within_2pt", "accuracy_within_3pt"]
+    mean_metrics = {}
+    for k in metrics_keys:
+        vals = [summary["candidates"][c].get(k) for c in summary["candidates"] if summary["candidates"][c].get(k) is not None]
+        mean_metrics[k] = sum(vals) / len(vals) if vals else None
+    summary["mean_all_candidates"] = mean_metrics
     config.MODELS_DIR.mkdir(parents=True, exist_ok=True)
     json_path = config.MODELS_DIR / "summary_all_candidates.json"
     with open(json_path, "w", encoding="utf-8") as f:
