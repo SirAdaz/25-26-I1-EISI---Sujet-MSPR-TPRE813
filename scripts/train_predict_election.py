@@ -209,7 +209,7 @@ def cross_validate_model(X, y, cv=5, model_name="rf", random_state=42):
     return {"R2_cv_mean": r2_mean, "R2_cv_std": res["test_r2"].std(), "MAE_cv_mean": mae_mean}
 
 
-def tune_and_train(X, y, test_size=0.2, random_state=42, model_name="gb"):
+def tune_and_train(X, y, test_size=0.2, random_state=42, model_name="xgb"):
     """GridSearchCV sur Gradient Boosting, refit du meilleur modele, evaluation sur le split test."""
     from sklearn.model_selection import GridSearchCV
     X_train, X_test, y_train, y_test = train_test_split(
@@ -320,7 +320,7 @@ def _check_optional_gold_vars(df):
         print(f"  Absentes:  {absent} (relancer silver_to_gold si besoin)")
 
 
-def run(train=True, target_candidate="MACRON", test_size=0.2, model_name="gb", do_cv=False, do_tune=False,
+def run(train=True, target_candidate="MACRON", test_size=0.2, model_name="xgb", do_cv=False, do_tune=False,
        top_features=None, holdout_path=None):
     df = load_gold_view()
     _check_optional_gold_vars(df)
@@ -506,7 +506,7 @@ def main():
     parser.add_argument("--target", default="MACRON", help="Candidat cible (part des voix)")
     parser.add_argument("--all", action="store_true", help="Entrainer un modele pour chaque candidat (un par un)")
     parser.add_argument("--test-size", type=float, default=0.2, help="Part des donnees en test")
-    parser.add_argument("--model", default="gb", choices=["rf", "gb", "xgb"], help="gb=GradientBoosting (defaut), xgb=XGBoost, rf=RandomForest")
+    parser.add_argument("--model", default="xgb", choices=["rf", "gb", "xgb"], help="xgb=XGBoost (defaut), gb=GradientBoosting, rf=RandomForest")
     parser.add_argument("--cv", action="store_true", default=True, help="Afficher R2/MAE en cross-validation 5-fold (estimation stable, defaut: True)")
     parser.add_argument("--no-cv", action="store_true", help="Ne pas afficher la cross-validation")
     parser.add_argument("--tune", action="store_true", help="Recherche des meilleurs hyperparametres (plus performant mais lent)")
