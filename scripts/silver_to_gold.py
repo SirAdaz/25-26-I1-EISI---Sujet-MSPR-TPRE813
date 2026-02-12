@@ -60,6 +60,8 @@ def _load_extra_elections(communes_10k_set, exclude_years=None):
             part_df[f"part_voix_{candidat}_{year}_{typ}"] = (
                 df[col] / df["_exprimes"]
             ).round(6)
+        # Une seule ligne par code_geo : agg moyenne si plusieurs circonscriptions (ex. Paris, Marseille)
+        part_df = part_df.groupby("code_geo", as_index=False).mean().round(6)
         results.append(part_df)
     return results
 
@@ -360,6 +362,8 @@ def _write_resultat_and_vue_ml(elec, geo_df, stat_per_geo, voix_cols, nom_to_id_
         vue_ml[f"part_voix_2017_{cand}"] = (vue_ml[col] / exprimes).round(6)
     vue_ml = vue_ml.drop(columns=voix_cols, errors="ignore")
     vue_ml = _merge_extra_parts_into_vue(vue_ml, extra_elections_parts or [])
+    # Une seule ligne par commune (au cas ou un merge aurait duplique)
+    vue_ml = vue_ml.drop_duplicates(subset=["code_geo"], keep="first")
     view_name = output_view_basename if output_view_basename else "gold_ml_view.csv"
     vue_ml.to_csv(config.GOLD_DIR / view_name, index=False, sep=";", encoding="utf-8")
 
