@@ -14,7 +14,98 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 import config
+import dbf
 
+def dataframe_to_dbf(df, filepath):
+    filepath = str(filepath)  # dbf library needs a string, not a Path
+    df = df.copy()
+
+    # Replace NaN with type-appropriate defaults BEFORE building specs
+    for col, dtype in df.dtypes.items():
+        if dtype == 'object':
+            df[col] = df[col].fillna('').astype(str)
+        elif 'int' in str(dtype):
+            df[col] = df[col].fillna(0).astype(int)
+        elif 'float' in str(dtype):
+            df[col] = df[col].fillna(0.0)
+        elif 'bool' in str(dtype):
+            df[col] = df[col].fillna(False)
+
+    field_specs = []
+    for col, dtype in df.dtypes.items():
+        if dtype == 'object':
+            max_len = df[col].astype(str).str.len().max()
+            max_len = max(1, min(int(max_len), 254))  # at least 1 char
+            field_specs.append(f'{col} C({max_len})')
+        elif 'int' in str(dtype):
+            field_specs.append(f'{col} N(10, 0)')
+        elif 'float' in str(dtype):
+            field_specs.append(f'{col} N(20, 5)')
+        elif 'bool' in str(dtype):
+            field_specs.append(f'{col} L')
+        elif 'datetime' in str(dtype):
+            field_specs.append(f'{col} D')
+
+    table = dbf.Table(filepath, '; '.join(field_specs))
+    table.open(dbf.READ_WRITE)
+    for _, row in df.iterrows():
+        table.append(tuple(row))
+    table.close()
+
+def dbf_to_dataframe(filepath: str) -> pd.DataFrame:
+    """Convert a DBF file to a pandas DataFrame."""
+    table = dbf.Table(str(filepath))  # dbf needs a string, not a Path
+    table.open(dbf.READ_ONLY)
+    try:
+        records = []
+        for record in table:
+            if not dbf.is_deleted(record):
+                records.append(list(record))
+        columns = table.field_names
+        df = pd.DataFrame(records, columns=columns)
+        # Strip trailing whitespace from string fields (DBF pads them)
+        for col in df.columns:
+            if df[col].dtype == 'object':
+                df[col] = df[col].apply(lambda x: x.strip() if isinstance(x, str) else x)
+        # Convert DBF Date objects to datetime
+        for field in table.field_names:
+            if table.field_info(field).field_type == 'D':
+                df[field] = pd.to_datetime(df[field].astype(str), errors='coerce')
+    finally:
+        table.close()
+    return df
+
+# Usage
+df = pd.DataFrame({
+    'name': ['Alice', 'Bob'],
+    'age': [30, 25],
+    'score': [95.5, 87.3]
+})
+
+dataframe_to_dbf(df, 'output.dbf')
+
+def load_gold():
+    """Load Gold DBF tables back into DataFrames."""
+    gold_files = {
+        "geo":             config.GOLD_DIR / "geo.dbf",
+        "vote":            config.GOLD_DIR / "vote.dbf",
+        "date_du_vote":    config.GOLD_DIR / "DateDuVote.dbf",
+        "stat":            config.GOLD_DIR / "stat.dbf",
+        "candidat":        config.GOLD_DIR / "candidat.dbf",
+        "parti_politique": config.GOLD_DIR / "parti_politique.dbf",
+        "situe":           config.GOLD_DIR / "situe.dbf",
+        "possede":         config.GOLD_DIR / "possede.dbf",
+        "resultat":        config.GOLD_DIR / "resultat.dbf",
+        "vue_ml":          config.GOLD_DIR / "gold_ml_view.dbf",
+    }
+    loaded = {}
+    for name, path in gold_files.items():
+        if path.exists():
+            loaded[name] = dbf_to_dataframe(path)
+        else:
+            print(f"  [WARN] Gold file not found: {path}")
+            loaded[name] = None
+    return loaded
 
 def ensure_gold_dir():
     config.GOLD_DIR.mkdir(parents=True, exist_ok=True)
@@ -147,11 +238,15 @@ def _filter_communes_and_build_geo_tables(geography, elections):
     geo_df["Id_geo"] = geo_df["code_geo"].map(geo_to_id)
     geo_df = geo_df[["Id_geo", "code_geo", "libelle_commune", "libelle_dep"]]
     geo_df = geo_df.rename(columns={"libelle_commune": "ville", "libelle_dep": "departement"})
-    geo_df.to_csv(config.GOLD_DIR / "geo.csv", index=False, sep=";", encoding="utf-8")
-    pd.DataFrame([{"Id_vote": 1}]).to_csv(config.GOLD_DIR / "vote.csv", index=False, sep=";", encoding="utf-8")
-    pd.DataFrame([{"Id_DateDuVote": 1, "fuseauxHoraire": "Europe/Paris", "Id_vote": 1}]).to_csv(
-        config.GOLD_DIR / "DateDuVote.csv", index=False, sep=";", encoding="utf-8"
-    )
+    #geo_df.to_csv(config.GOLD_DIR / "geo.csv", index=False, sep=";", encoding="utf-8")
+    dataframe_to_dbf(geo_df, config.GOLD_DIR / "geo.dbf")
+    #pd.DataFrame([{"Id_vote": 1}]).to_csv(config.GOLD_DIR / "vote.csv", index=False, sep=";", encoding="utf-8")
+    dataframe_to_dbf(pd.DataFrame([{"Id_vote": 1}]), config.GOLD_DIR / "vote.dbf")
+    #pd.DataFrame([{"Id_DateDuVote": 1, "fuseauxHoraire": "Europe/Paris", "Id_vote": 1}]).to_csv(
+    #    config.GOLD_DIR / "DateDuVote.csv", index=False, sep=";", encoding="utf-8"
+    #)
+    dataframe_to_dbf(pd.DataFrame([{"Id_DateDuVote": 1, "fuseauxHoraire": "Europe/Paris", "Id_vote": 1}]),
+                     config.GOLD_DIR / "DateDuVote.dbf")
     return pop, communes_10k, elec, geo_to_id, geo_df
 
 
@@ -165,14 +260,16 @@ def _build_candidats_and_partis(elec):
         "prenom": [" ".join(n.split()[:-1]) if len(n.split()) > 1 else "" for n in candidat_noms],
         "Id_vote": 1,
     })
-    candidat_df.to_csv(config.GOLD_DIR / "candidat.csv", index=False, sep=";", encoding="utf-8")
+    #candidat_df.to_csv(config.GOLD_DIR / "candidat.csv", index=False, sep=";", encoding="utf-8")
+    dataframe_to_dbf(candidat_df, config.GOLD_DIR / "candidat.dbf")
     parti_df = pd.DataFrame({
         "Id_parti_politique": range(1, len(candidat_noms) + 1),
         "nom": ["Parti"] * len(candidat_noms),
         "orientation": "N/A",
         "Id_candidat": range(1, len(candidat_noms) + 1),
     })
-    parti_df.to_csv(config.GOLD_DIR / "parti_politique.csv", index=False, sep=";", encoding="utf-8")
+    #parti_df.to_csv(config.GOLD_DIR / "parti_politique.csv", index=False, sep=";", encoding="utf-8")
+    dataframe_to_dbf(parti_df, config.GOLD_DIR / "parti_politique.dbf")
     nom_to_id_candidat = {vc.replace("voix_", ""): i + 1 for i, vc in enumerate(voix_cols)}
     return voix_cols, nom_to_id_candidat
 
@@ -287,7 +384,8 @@ def _build_stat_table(geography, communes_10k, geo_to_id, pop, elec, etatcivil, 
     extra_stat_cols = [c for c in ["med_niveau_vie", "taux_pauvrette", "part_sans_diplome", "part_bac_plus", "pop_commune"]
                       if c in stat_per_geo.columns]
     stat_df = stat_per_geo[base_stat_cols + extra_stat_cols]
-    stat_df.to_csv(config.GOLD_DIR / "stat.csv", index=False, sep=";", encoding="utf-8")
+    #stat_df.to_csv(config.GOLD_DIR / "stat.csv", index=False, sep=";", encoding="utf-8")
+    dataframe_to_dbf(stat_df, config.GOLD_DIR / "stat.dbf")
     geo_to_id_stat = stat_per_geo.set_index("Id_geo")["Id_stat"].to_dict()
     return stat_per_geo, geo_to_id_stat
 
@@ -336,15 +434,18 @@ def _write_resultat_and_vue_ml(elec, geo_df, stat_per_geo, voix_cols, nom_to_id_
                                extra_elections_parts=None, output_view_basename=None):
     """Ecrit situe, possede, resultat et la vue ML. output_view_basename : nom du fichier vue (ex. gold_ml_view_2022.csv)."""
     situe_df = pd.DataFrame({"Id_geo": list(geo_to_id.values()), "Id_vote": 1})
-    situe_df.to_csv(config.GOLD_DIR / "situe.csv", index=False, sep=";", encoding="utf-8")
+    #situe_df.to_csv(config.GOLD_DIR / "situe.csv", index=False, sep=";", encoding="utf-8")
+    dataframe_to_dbf(situe_df, config.GOLD_DIR / "situe.dbf")
     possede_df = pd.DataFrame({
         "Id_geo": list(geo_to_id.values()),
         "Id_stat": [geo_to_id_stat.get(i) for i in geo_to_id.values()],
     })
-    possede_df.to_csv(config.GOLD_DIR / "possede.csv", index=False, sep=";", encoding="utf-8")
-    pd.DataFrame(_build_resultat_rows(elec, voix_cols, nom_to_id_candidat)).to_csv(
-        config.GOLD_DIR / "resultat.csv", index=False, sep=";", encoding="utf-8"
-    )
+    #possede_df.to_csv(config.GOLD_DIR / "possede.csv", index=False, sep=";", encoding="utf-8")
+    dataframe_to_dbf(possede_df, config.GOLD_DIR / "possede.dbf")
+    #pd.DataFrame(_build_resultat_rows(elec, voix_cols, nom_to_id_candidat)).to_csv(
+    #    config.GOLD_DIR / "resultat.csv", index=False, sep=";", encoding="utf-8"
+    #)
+    dataframe_to_dbf(pd.DataFrame(_build_resultat_rows(elec, voix_cols, nom_to_id_candidat)), config.GOLD_DIR / "resultat.dbf")
     stat_cols = [c for c in ["Id_geo", "tauxChomage", "tauxSec", "TauxMariage", "TauxDec", "tauxNatalite",
                              "med_niveau_vie", "taux_pauvrette", "part_sans_diplome", "part_bac_plus", "pop_commune"] if c in stat_per_geo.columns]
     vue_ml = geo_df.merge(
@@ -360,8 +461,9 @@ def _write_resultat_and_vue_ml(elec, geo_df, stat_per_geo, voix_cols, nom_to_id_
         vue_ml[f"part_voix_2017_{cand}"] = (vue_ml[col] / exprimes).round(6)
     vue_ml = vue_ml.drop(columns=voix_cols, errors="ignore")
     vue_ml = _merge_extra_parts_into_vue(vue_ml, extra_elections_parts or [])
-    view_name = output_view_basename if output_view_basename else "gold_ml_view.csv"
-    vue_ml.to_csv(config.GOLD_DIR / view_name, index=False, sep=";", encoding="utf-8")
+    view_name = output_view_basename if output_view_basename else "gold_ml_view.dbf" #.csv
+    #vue_ml.to_csv(config.GOLD_DIR / view_name, index=False, sep=";", encoding="utf-8")
+    dataframe_to_dbf(vue_ml, config.GOLD_DIR / view_name)
 
 
 def run(output_view_basename=None):

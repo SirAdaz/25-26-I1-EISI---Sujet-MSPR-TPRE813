@@ -33,14 +33,32 @@ import config
 # -----------------------------------------------------------------------------
 # Donnees : chargement Gold, variables derivees, preparation X / y
 # -----------------------------------------------------------------------------
+# Add this at the top of train_predict_election.py (with your other imports)
+import dbf
+
+def dbf_to_dataframe(filepath) -> pd.DataFrame:
+    table = dbf.Table(str(filepath))
+    table.open(dbf.READ_ONLY)
+    try:
+        records = [list(r) for r in table if not dbf.is_deleted(r)]
+        df = pd.DataFrame(records, columns=table.field_names)
+        for col in df.columns:
+            if df[col].dtype == 'object':
+                df[col] = df[col].apply(lambda x: x.strip() if isinstance(x, str) else x)
+        for field in table.field_names:
+            if table.field_info(field).field_type == 'D':
+                df[field] = pd.to_datetime(df[field].astype(str), errors='coerce')
+    finally:
+        table.close()
+    return df
+
 
 def load_gold_view():
     """Charge la vue Gold pour le ML."""
-    path = config.GOLD_DIR / "gold_ml_view.csv"
+    path = config.GOLD_DIR / "gold_ml_view.dbf"  # was .csv
     if not path.exists():
         raise FileNotFoundError(f"Executer d'abord silver_to_gold.py. Fichier absent: {path}")
-    df = pd.read_csv(path, sep=";", encoding="utf-8")
-    return df
+    return dbf_to_dataframe(path)
 
 
 def add_derived_features(df):
@@ -393,21 +411,24 @@ def _do_train_and_save(X, y, feature_cols, target_candidate, test_size, model_na
 
 
 def evaluate_holdout(model, feature_cols, holdout_path, target_candidate):
-    """
-    Validation temporelle : évalue le modèle sur une vue Gold d'une autre année (ex. 2022).
-    holdout_path : chemin vers un CSV même format que gold_ml_view (features + part_voix_2017_* pour la cible).
-    """
     path = Path(holdout_path)
     if not path.is_absolute():
         path = PROJECT_ROOT / path
     if not path.exists():
         print(f"  Holdout ignoré : fichier introuvable {path}")
         return
-    df = pd.read_csv(path, sep=";", encoding="utf-8")
+    # Support both .dbf and .csv for holdout (legacy compatibility)
+    if path.suffix == ".csv":
+        df = pd.read_csv(path, sep=";", encoding="utf-8")
+    else:
+        df = dbf_to_dataframe(path)
+
+    # rest of the function is unchanged...
     add_derived_features(df)
     missing = [c for c in feature_cols if c not in df.columns]
     if missing:
-        print(f"  Holdout ignoré : colonnes manquantes dans la vue {path.name}: {missing[:10]}{'...' if len(missing) > 10 else ''}")
+        print(
+            f"  Holdout ignoré : colonnes manquantes dans la vue {path.name}: {missing[:10]}{'...' if len(missing) > 10 else ''}")
         return
     target_col = f"part_voix_2017_{target_candidate}"
     if target_col not in df.columns and f"voix_{target_candidate}" not in df.columns:
@@ -420,7 +441,8 @@ def evaluate_holdout(model, feature_cols, holdout_path, target_candidate):
     y_pred = model.predict(x_holdout)
     r2 = float(r2_score(y_holdout, y_pred))
     mae = float(mean_absolute_error(y_holdout, y_pred))
-    print(f"  Validation temporelle (holdout {path.name}) : R2 = {r2:.4f}, MAE = {mae:.4f} (n = {len(x_holdout)} communes)")
+    print(
+        f"  Validation temporelle (holdout {path.name}) : R2 = {r2:.4f}, MAE = {mae:.4f} (n = {len(x_holdout)} communes)")
 
 
 # -----------------------------------------------------------------------------
