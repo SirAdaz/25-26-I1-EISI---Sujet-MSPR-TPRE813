@@ -23,6 +23,7 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+import db_handler as db
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -35,7 +36,7 @@ import config
 # -----------------------------------------------------------------------------
 
 def load_gold_view():
-    """Charge la vue Gold pour le ML."""
+    """Charge la vue csv Gold pour le ML."""
     path = config.GOLD_DIR / "gold_ml_view.csv"
     if not path.exists():
         raise FileNotFoundError(f"Executer d'abord silver_to_gold.py. Fichier absent: {path}")
@@ -322,7 +323,7 @@ def _check_optional_gold_vars(df):
 
 def run(train=True, target_candidate="MACRON", test_size=0.2, model_name="gb", do_cv=False, do_tune=False,
        top_features=None, holdout_path=None):
-    df = load_gold_view()
+    df = db.load_gold_view()
     _check_optional_gold_vars(df)
     derived = add_derived_features(df)
     # Liste des features : indicateurs de base + optionnels (Filosofi, diplômes, pop) + dérivées + part_voix
@@ -429,7 +430,7 @@ def evaluate_holdout(model, feature_cols, holdout_path, target_candidate):
 
 def get_all_candidates():
     """Retourne la liste des noms de candidats (part_voix_2017_* ou voix_*) dans la vue Gold."""
-    df = load_gold_view()
+    df = db.load_gold_view()
     part_cols = [c for c in df.columns if c.startswith(f"part_voix_{config.ELECTION_YEAR}_")]
     if part_cols:
         return sorted([c.replace(f"part_voix_{config.ELECTION_YEAR}_", "") for c in part_cols])
