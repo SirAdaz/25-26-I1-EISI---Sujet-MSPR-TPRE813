@@ -36,3 +36,6 @@ build/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+#Carte.py
+communes.geojson
