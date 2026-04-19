@@ -57,6 +57,7 @@ python scripts/train_predict_election.py [--target MACRON] [options]
 - `--cv` / `--no-cv` : afficher ou non la cross-validation 5-fold (defaut : afficher).
 - `--tune` : recherche d’hyperparametres (GridSearchCV, plus lent).
 - `--no-train` : ne pas entrainer (chargement uniquement).
+- `--use-csv` : prioriser les données stockées en csv au données sqlite pour l'entrainement du modèle.
 - `--top-features N` : n’utiliser que les N variables les plus importantes (reduit le bruit).
 - `--holdout CHEMIN` : apres entrainement, evaluer le modele sur une vue Gold d’une autre annee (validation temporelle).
 

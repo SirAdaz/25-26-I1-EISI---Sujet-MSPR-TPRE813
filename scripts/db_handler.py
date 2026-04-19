@@ -28,3 +28,6 @@ def load_gold_view() -> pd.DataFrame:
     if not DB_PATH.exists():
         raise FileNotFoundError(f"Executer d'abord silver_to_gold.py. Fichier absent: {DB_PATH}")
     return load_table("gold_ml_view")
+
+#df = load_gold_view()
+#print(df.columns.tolist())
