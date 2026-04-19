@@ -9,6 +9,7 @@ import sys
 
 import numpy as np
 import pandas as pd
+import db_handler as db
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -150,10 +151,14 @@ def _filter_communes_and_build_geo_tables(geography, elections):
     geo_df = geo_df[["Id_geo", "code_geo", "libelle_commune", "libelle_dep"]]
     geo_df = geo_df.rename(columns={"libelle_commune": "ville", "libelle_dep": "departement"})
     geo_df.to_csv(config.GOLD_DIR / "geo.csv", index=False, sep=";", encoding="utf-8")
+    db.save_table(geo_df, "geo")
     pd.DataFrame([{"Id_vote": 1}]).to_csv(config.GOLD_DIR / "vote.csv", index=False, sep=";", encoding="utf-8")
+    db.save_table(pd.DataFrame([{"Id_vote": 1}]), "vote")
     pd.DataFrame([{"Id_DateDuVote": 1, "fuseauxHoraire": "Europe/Paris", "Id_vote": 1}]).to_csv(
         config.GOLD_DIR / "DateDuVote.csv", index=False, sep=";", encoding="utf-8"
     )
+    db.save_table(pd.DataFrame([{"Id_DateDuVote": 1, "fuseauxHoraire": "Europe/Paris", "Id_vote": 1}]), "DateDuVote")
+
     return pop, communes_10k, elec, geo_to_id, geo_df
 
 
@@ -168,6 +173,7 @@ def _build_candidats_and_partis(elec):
         "Id_vote": 1,
     })
     candidat_df.to_csv(config.GOLD_DIR / "candidat.csv", index=False, sep=";", encoding="utf-8")
+    db.save_table(candidat_df, "candidat")
     parti_df = pd.DataFrame({
         "Id_parti_politique": range(1, len(candidat_noms) + 1),
         "nom": ["Parti"] * len(candidat_noms),
@@ -175,6 +181,7 @@ def _build_candidats_and_partis(elec):
         "Id_candidat": range(1, len(candidat_noms) + 1),
     })
     parti_df.to_csv(config.GOLD_DIR / "parti_politique.csv", index=False, sep=";", encoding="utf-8")
+    db.save_table(parti_df, "parti_politique")
     nom_to_id_candidat = {vc.replace("voix_", ""): i + 1 for i, vc in enumerate(voix_cols)}
     return voix_cols, nom_to_id_candidat
 
@@ -290,6 +297,7 @@ def _build_stat_table(geography, communes_10k, geo_to_id, pop, elec, etatcivil, 
                       if c in stat_per_geo.columns]
     stat_df = stat_per_geo[base_stat_cols + extra_stat_cols]
     stat_df.to_csv(config.GOLD_DIR / "stat.csv", index=False, sep=";", encoding="utf-8")
+    db.save_table(stat_df, "stat")
     geo_to_id_stat = stat_per_geo.set_index("Id_geo")["Id_stat"].to_dict()
     return stat_per_geo, geo_to_id_stat
 
@@ -339,14 +347,17 @@ def _write_resultat_and_vue_ml(elec, geo_df, stat_per_geo, voix_cols, nom_to_id_
     """Ecrit situe, possede, resultat et la vue ML. output_view_basename : nom du fichier vue (ex. gold_ml_view_2022.csv)."""
     situe_df = pd.DataFrame({"Id_geo": list(geo_to_id.values()), "Id_vote": 1})
     situe_df.to_csv(config.GOLD_DIR / "situe.csv", index=False, sep=";", encoding="utf-8")
+    db.save_table(situe_df, "situe")
     possede_df = pd.DataFrame({
         "Id_geo": list(geo_to_id.values()),
         "Id_stat": [geo_to_id_stat.get(i) for i in geo_to_id.values()],
     })
     possede_df.to_csv(config.GOLD_DIR / "possede.csv", index=False, sep=";", encoding="utf-8")
+    db.save_table(possede_df, "possede")
     pd.DataFrame(_build_resultat_rows(elec, voix_cols, nom_to_id_candidat)).to_csv(
         config.GOLD_DIR / "resultat.csv", index=False, sep=";", encoding="utf-8"
     )
+    db.save_table(pd.DataFrame(_build_resultat_rows(elec, voix_cols, nom_to_id_candidat)), "resultat")
     stat_cols = [c for c in ["Id_geo", "tauxChomage", "tauxSec", "TauxMariage", "TauxDec", "tauxNatalite",
                              "med_niveau_vie", "taux_pauvrette", "part_sans_diplome", "part_bac_plus", "pop_commune"] if c in stat_per_geo.columns]
     vue_ml = geo_df.merge(
@@ -366,6 +377,8 @@ def _write_resultat_and_vue_ml(elec, geo_df, stat_per_geo, voix_cols, nom_to_id_
     vue_ml = vue_ml.drop_duplicates(subset=["code_geo"], keep="first")
     view_name = output_view_basename if output_view_basename else "gold_ml_view.csv"
     vue_ml.to_csv(config.GOLD_DIR / view_name, index=False, sep=";", encoding="utf-8")
+    view_name = output_view_basename if output_view_basename else "gold_ml_view.csv"
+    db.save_table(vue_ml, view_name)
 
 
 def run(output_view_basename=None):

@@ -23,6 +23,7 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+import db_handler as db
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -35,13 +36,20 @@ import config
 # -----------------------------------------------------------------------------
 
 def load_gold_view():
-    """Charge la vue Gold pour le ML."""
+    """Charge la vue csv Gold pour le ML."""
     path = config.GOLD_DIR / "gold_ml_view.csv"
     if not path.exists():
         raise FileNotFoundError(f"Executer d'abord silver_to_gold.py. Fichier absent: {path}")
     df = pd.read_csv(path, sep=";", encoding="utf-8")
     return df
 
+def load_correct_gold_view(use_csv) :
+    if use_csv:
+        print("Utilisation des données CSV")
+        return load_gold_view()
+    else:
+        print("Utilisation des données SQLITE")
+        return db.load_gold_view()
 
 def add_derived_features(df):
     """
@@ -320,9 +328,9 @@ def _check_optional_gold_vars(df):
         print(f"  Absentes:  {absent} (relancer silver_to_gold si besoin)")
 
 
-def run(train=True, target_candidate="MACRON", test_size=0.2, model_name="xgb", do_cv=False, do_tune=False,
-       top_features=None, holdout_path=None):
-    df = load_gold_view()
+def run(train=True, target_candidate="MACRON", test_size=0.2, model_name="gb", do_cv=False, do_tune=False,
+       top_features=None, holdout_path=None, use_csv=False):
+    df = load_correct_gold_view(use_csv)
     _check_optional_gold_vars(df)
     derived = add_derived_features(df)
     # Liste des features : indicateurs de base + optionnels (Filosofi, diplômes, pop) + dérivées + part_voix
@@ -427,9 +435,9 @@ def evaluate_holdout(model, feature_cols, holdout_path, target_candidate):
 # Synthese : liste candidats, agregation metriques (--all), JSON + PNG
 # -----------------------------------------------------------------------------
 
-def get_all_candidates():
+def get_all_candidates(use_csv=False):
     """Retourne la liste des noms de candidats (part_voix_2017_* ou voix_*) dans la vue Gold."""
-    df = load_gold_view()
+    df = load_correct_gold_view(use_csv)
     part_cols = [c for c in df.columns if c.startswith(f"part_voix_{config.ELECTION_YEAR}_")]
     if part_cols:
         return sorted([c.replace(f"part_voix_{config.ELECTION_YEAR}_", "") for c in part_cols])
@@ -518,6 +526,7 @@ def main():
     parser.add_argument("--no-cv", action="store_true", help="Ne pas afficher la cross-validation")
     parser.add_argument("--tune", action="store_true", help="Recherche des meilleurs hyperparametres (plus performant mais lent)")
     parser.add_argument("--no-train", action="store_true", help="Ne pas entrainer (charger seulement)")
+    parser.add_argument("--use-csv", action="store_true", help="Utiliser les fichiers CSV pour la prédiction plutôt que le chéma sqlite")
     parser.add_argument("--top-features", type=int, default=None, metavar="N",
                         help="N'utiliser que les N variables les plus importantes (reduit le bruit)")
     parser.add_argument("--holdout", type=str, default=None, metavar="PATH",
@@ -527,7 +536,7 @@ def main():
     do_cv = args.cv and not getattr(args, "no_cv", False)
     # Mode --all : un modèle par candidat puis synthèse JSON + PNG
     if args.all:
-        candidates = get_all_candidates()
+        candidates = get_all_candidates(use_csv=args.use_cv)
         print(f"Entrainement pour {len(candidates)} candidats : {candidates}\n")
         for i, cand in enumerate(candidates, 1):
             print(f"========== [{i}/{len(candidates)}] Candidat: {cand} ==========")
@@ -543,7 +552,7 @@ def main():
     # Un seul candidat cible
     run(train=not args.no_train, target_candidate=args.target, test_size=args.test_size,
         model_name=args.model, do_cv=do_cv, do_tune=args.tune,
-        top_features=args.top_features, holdout_path=args.holdout)
+        top_features=args.top_features, holdout_path=args.holdout, use_csv=args.use_csv)
 
 
 if __name__ == "__main__":
