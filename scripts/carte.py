@@ -122,14 +122,14 @@ def run():
     <div style="position:fixed;bottom:30px;left:30px;z-index:1000;background:white;
                 padding:14px 18px;border-radius:8px;border:1px solid #ccc;
                 box-shadow:2px 2px 8px rgba(0,0,0,.15);font-family:Arial,sans-serif;max-width:270px;">
-      <b>🗳️ Présidentielle 2017 — 1er tour</b>
+      <b>️ Présidentielle 2017 — 1er tour</b>
       <div style="font-size:11px;color:#888;margin-bottom:8px;">
         Candidat en tête · communes &gt; 10 000 hab.<br>Gris = absent du jeu de données
       </div>{items}
     </div>"""))
 
     carte.save(OUTPUT_HTML)
-    print(f"\n✅ Carte générée : {OUTPUT_HTML}")
+    print(f"\n Carte générée : {OUTPUT_HTML}")
 
 if __name__ == "__main__":
     run()
