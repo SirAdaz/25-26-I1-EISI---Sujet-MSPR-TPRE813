@@ -17,6 +17,13 @@ import config
 
 
 def main():
+    """
+    Execute la pipeline intégrale du modèle IA
+    1 : Transformation des données bronze en silver
+    2 : Transformation des données silver en gold
+    3 : Création et entrainement du modèle
+    4 : Evaluation et création d'un visuel
+    """
     p = argparse.ArgumentParser(description="Pipeline medallion + IA predictions elections")
     p.add_argument("--year", type=int, default=config.ELECTION_YEAR, help="Annee election")
     p.add_argument("--min-pop", type=int, default=config.MIN_POPULATION, help="Population min par commune")
@@ -42,6 +49,10 @@ def main():
         run_train(target_candidate=args.target)
     else:
         print("\nEtape 3/3 : Entrainement (ignore)")
+
+    print("\nEtape bonus : carte politique")
+    from carte import run as create_carte
+    create_carte()
 
     print("\nPipeline termine.")
 

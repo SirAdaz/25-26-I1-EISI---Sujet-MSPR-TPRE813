@@ -69,20 +69,45 @@ def _normalize_col_names(columns):
     ]
 
 
-def _extract_voix_columns_wide(df, first_row, max_candidates=25):
-    """Extrait les colonnes voix_<candidat> depuis un format large (Nom, Voix ou Nom.1, Voix.1...)."""
-    out = {}
+def _extract_voix_columns_wide(df, max_candidates=25):
+    """
+    Parcours l'ensemble des colonnes de voix pour l'election renseignée et calcul le nombre de voix de cahque candidat par ville
+    PRENDS LONGTEMPS A S'EXECUTER
+    """
+    col_pairs = []
     for i in range(max_candidates):
-        nom_col = "Nom" if i == 0 else f"Nom.{i}"
+        nom_col  = "Nom"  if i == 0 else f"Nom.{i}"
         voix_col = "Voix" if i == 0 else f"Voix.{i}"
-        if voix_col not in df.columns:
-            continue
-        nom_val = first_row.get(nom_col, "")
-        if pd.isna(nom_val) or not str(nom_val).strip():
-            continue
-        safe_name = re.sub(r"[^a-zA-Z0-9]", "_", str(nom_val).strip())[:50]
-        out[f"voix_{safe_name}"] = pd.to_numeric(df[voix_col], errors="coerce").astype("Int64")
-    return out
+        if nom_col in df.columns and voix_col in df.columns:
+            col_pairs.append((nom_col, voix_col))
+
+    if not col_pairs:
+        return {}
+
+    # Build a long-format table: (row_idx, safe_candidate_name, voix)
+    chunks = []
+    for nom_col, voix_col in col_pairs:
+        tmp = pd.DataFrame({
+            "row":      range(len(df)),
+            "candidat": df[nom_col].astype(str).str.strip()
+                          .apply(lambda n: re.sub(r"[^a-zA-Z0-9]", "_", n)[:50]),
+            "voix":     pd.to_numeric(df[voix_col].values, errors="coerce"),
+        })
+        tmp = tmp[tmp["candidat"].str.len() > 0]
+        chunks.append(tmp)
+
+    if not chunks:
+        return {}
+
+    long = pd.concat(chunks, ignore_index=True)
+    long = long.dropna(subset=["candidat"])
+    long = long[long["candidat"] != ""]
+
+    # Pivot back to wide: one column per candidate, one row per commune
+    wide = long.pivot_table(index="row", columns="candidat", values="voix", aggfunc="first")
+    wide = wide.reindex(range(len(df)))  # ensure all rows present, NaN for missing
+
+    return {f"voix_{c}": pd.array(wide[c].values, dtype="Int64") for c in wide.columns}
 
 
 # -----------------------------------------------------------------------------
@@ -113,7 +138,7 @@ def process_elections() -> pd.DataFrame:
     base_cols = ["code_geo", "code_dep", "libelle_dep", "libelle_commune", "inscrits", "votants", "exprimes"]
     available_base = [c for c in base_cols if c in df.columns]
     silver_elections = df[available_base].copy()
-    for col_name, series in _extract_voix_columns_wide(df, df.iloc[0]).items():
+    for col_name, series in _extract_voix_columns_wide(df).items():
         silver_elections[col_name] = series
     return silver_elections
 
@@ -140,7 +165,7 @@ def _read_elections_xls_2012(path) -> pd.DataFrame:
     base_cols = ["code_geo", "code_dep", "libelle_dep", "libelle_commune", "inscrits", "votants", "exprimes"]
     available_base = [c for c in base_cols if c in df.columns]
     silver = df[available_base].copy()
-    for col_name, series in _extract_voix_columns_wide(df, df.iloc[0], max_candidates=30).items():
+    for col_name, series in _extract_voix_columns_wide(df, max_candidates=30).items():
         silver[col_name] = series
     return silver
 

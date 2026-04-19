@@ -13,7 +13,6 @@ def get_conn():
     config.GOLD_DIR.mkdir(parents=True, exist_ok=True)
     return sqlite3.connect(DB_PATH)
 
-# Replaces dataframe_to_dbf()
 def save_table(df: pd.DataFrame, table_name: str):
     with get_conn() as conn:
         df.to_sql(table_name, conn, if_exists="replace", index=False)

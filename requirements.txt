@@ -6,3 +6,7 @@ joblib>=1.3.0
 matplotlib>=3.7.0
 dbfread>=0.7.0
 xgboost>=2.0.0
+geopandas~=1.1.3
+folium~=0.20.0
+requests~=2.33.1
+numpy~=2.2.6

@@ -536,7 +536,7 @@ def main():
     do_cv = args.cv and not getattr(args, "no_cv", False)
     # Mode --all : un modèle par candidat puis synthèse JSON + PNG
     if args.all:
-        candidates = get_all_candidates(use_csv=args.use_cv)
+        candidates = get_all_candidates(use_csv=args.use_csv)
         print(f"Entrainement pour {len(candidates)} candidats : {candidates}\n")
         for i, cand in enumerate(candidates, 1):
             print(f"========== [{i}/{len(candidates)}] Candidat: {cand} ==========")
